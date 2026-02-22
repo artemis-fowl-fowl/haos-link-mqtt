@@ -1,0 +1,24 @@
+publish_entity:
+  name: Publier une entité
+  description: Publier l'état d'une entité sur MQTT
+  fields:
+    entity_id:
+      name: Entité
+      description: L'entité à publier
+      selector:
+        entity: {}
+
+publish_selected_entities:
+  name: Publier les entités sélectionnées
+  description: Publier toutes les entités sélectionnées
+
+update_published:
+  name: Mettre à jour les entités publiées
+  description: Mettre à jour la liste des entités publiées
+  fields:
+    entity_ids:
+      name: Entités
+      description: Liste des entités à publier
+      selector:
+        entity:
+          multiple: true
