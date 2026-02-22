@@ -1,0 +1,47 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurer le Pont MQTT",
+        "description": "Veuillez entrer les détails du serveur MQTT",
+        "data": {
+          "host": "Adresse IP du broker MQTT",
+          "port": "Port MQTT",
+          "username": "Nom d'utilisateur MQTT",
+          "password": "Mot de passe MQTT",
+          "topic_prefix": "Préfixe du sujet MQTT"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de se connecter au broker MQTT",
+      "unknown": "Erreur inconnue"
+    }
+  },
+  "services": {
+    "publish_entity": {
+      "name": "Publier une entité",
+      "description": "Publier l'état d'une entité sur MQTT",
+      "fields": {
+        "entity_id": {
+          "name": "Entité",
+          "description": "L'entité à publier"
+        }
+      }
+    },
+    "publish_selected_entities": {
+      "name": "Publier les entités sélectionnées",
+      "description": "Publier toutes les entités sélectionnées"
+    },
+    "update_published": {
+      "name": "Mettre à jour les entités publiées",
+      "description": "Mettre à jour la liste des entités publiées",
+      "fields": {
+        "entity_ids": {
+          "name": "Entités",
+          "description": "Liste des entités à publier"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+# Exemple de configuration pour MQTT Entity Bridge
+
+# Configuration de base
+mqtt_entity_bridge:
+  mqtt_host: "192.168.1.100"  # Adresse IP de votre broker MQTT
+  mqtt_port: 1883              # Port MQTT (1883 par défaut)
+  mqtt_user: "mqtt_user"       # Nom d'utilisateur MQTT
+  mqtt_password: "mqtt_password" # Mot de passe MQTT
+  topic_prefix: "homeassistant" # Préfixe personnalisé (optionnel)
+
+# Lister les entités à publier
+mqtt_entity_bridge:
+  mqtt_host: "mosquitto.local"
+  mqtt_port: 1883
+  mqtt_user: "homeassistant"
+  mqtt_password: !secret mqtt_password
+  topic_prefix: "home/salon"
+  published_entities:
+    # Lumières
+    - light.salon
+    - light.cuisine
+    - light.chambre
+    # Switchs
+    - switch.garage
+    - switch.garage_door
+    - switch.prise_chauffage
+    # Capteurs
+    - sensor.temperature_salon
+    - sensor.humidity_salon
+    - sensor.motion_salon
+    # Climatisation
+    - climate.salon
+    # Serrures
+    - lock.porte_principale
+
+# Exemple: Automatisation pour publier les entités au démarrage
+automation mqtt_bridge_startup:
+  trigger:
+    - platform: homeassistant
+      event: start
+  action:
+    - service: mqtt_entity_bridge.publish_selected_entities
+      data: {}
+
+# Exemple: Republier automatiquement quand l'état change
+automation mqtt_bridge_republish:
+  trigger:
+    - platform: state
+      entity_id:
+        - light.salon
+        - light.cuisine
+        - switch.garage
+  action:
+    - service: mqtt_entity_bridge.publish_entity
+      data:
+        entity_id: "{{ trigger.entity_id }}"
+
+# Configuration optionnelle: Intégration avec l'utomatisation MQTT natif de HA
+# Cela permet à Home Assistant de vérifier les messages MQTT
+mqtt:
+  broker: "mosquitto.local"
+  username: "homeassistant"
+  password: !secret mqtt_password
