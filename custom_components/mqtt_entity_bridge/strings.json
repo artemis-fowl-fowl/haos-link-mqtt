@@ -11,6 +11,13 @@
           "password": "Mot de passe MQTT",
           "topic_prefix": "Préfixe du sujet MQTT"
         }
+      },
+      "select_entities": {
+        "title": "Sélectionner les entités",
+        "description": "Choisissez les entités à publier sur MQTT",
+        "data": {
+          "published_entities": "Entités à publier"
+        }
       }
     },
     "error": {

@@ -9,6 +9,7 @@ from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNA
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import config_validation as cv
 
 from . import DOMAIN
 
@@ -22,6 +23,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow pour MQTT Entity Bridge."""
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        """Initialiser le flow."""
+        self.mqtt_config: Dict[str, Any] = {}
 
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -39,10 +44,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     user_input.get(CONF_USERNAME),
                     user_input.get(CONF_PASSWORD),
                 )
-                return self.async_create_entry(
-                    title=f"MQTT Bridge ({user_input.get(CONF_HOST)})",
-                    data=user_input,
-                )
+                # Sauvegarder et aller à l'étape suivante
+                self.mqtt_config = user_input
+                return await self.async_step_select_entities()
             except ConnectionError as err:
                 _LOGGER.error(f"Erreur connexion MQTT: {err}")
                 errors["base"] = "cannot_connect"
@@ -62,6 +66,32 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
+        )
+
+    async def async_step_select_entities(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Deuxième étape: sélectionner les entités à publier."""
+        if user_input is not None:
+            # Combiner les données MQTT avec les entités sélectionnées
+            config_data = {**self.mqtt_config, **user_input}
+            return self.async_create_entry(
+                title=f"MQTT Bridge ({self.mqtt_config.get(CONF_HOST)})",
+                data=config_data,
+            )
+
+        # Récupérer les entités disponibles
+        states = self.hass.states.async_all()
+        entity_ids = sorted([state.entity_id for state in states])
+        entities_dict = {eid: eid for eid in entity_ids}
+
+        return self.async_show_form(
+            step_id="select_entities",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_PUBLISHED_ENTITIES, default=[]): cv.multi_select(entities_dict),
+                }
+            ),
         )
 
 

@@ -89,6 +89,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Connecter MQTT
     await mqtt_client.async_connect()
+    
+    _LOGGER.info(f"MQTT Entity Bridge configuré avec {len(hass.data[DOMAIN]['published_entities'])} entités")
 
     return True
 
