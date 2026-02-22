@@ -187,7 +187,28 @@ class MQTTEntityBridge:
 
             domain, obj_id = entity_id.split(".", 1)
 
-            # Payload simple avec l'état
+            # 1. Publier discovery config (MQTT Auto-Discovery)
+            config_topic = f"{self.topic_prefix}/{domain}/{obj_id}/config"
+            discovery_config = {
+                "unique_id": entity_id,
+                "name": state.attributes.get("friendly_name", obj_id),
+                "state_topic": f"{self.topic_prefix}/{domain}/{obj_id}/state",
+                "state_value_template": "{{ value_json.state }}",
+                "json_attributes_topic": f"{self.topic_prefix}/{domain}/{obj_id}/state",
+                "json_attributes_template": "{{ value_json.attributes | tojson }}",
+                "device_class": state.attributes.get("device_class"),
+            }
+            
+            # Enlever les values None et vides
+            discovery_config = {k: v for k, v in discovery_config.items() if v not in (None, "")}
+            
+            try:
+                self.client.publish(config_topic, json.dumps(discovery_config), qos=1, retain=True)
+                _LOGGER.debug(f"📋 Discovery publié: {config_topic}")
+            except Exception as err:
+                _LOGGER.error(f"❌ Erreur discovery: {err}")
+
+            # 2. Publier l'état actuel
             payload = {
                 "entity_id": entity_id,
                 "state": state.state,
