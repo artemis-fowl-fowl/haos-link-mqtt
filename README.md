@@ -204,4 +204,4 @@ MIT License - Voir [LICENSE](LICENSE)
 
 ## 💬 Support
 
-Pour plus d'aide, ouvrir une issue dans le [GitHub Repository](https://github.com/[USERNAME]/mqtt_entity_bridge/issues)
+Pour plus d'aide, ouvrir une issue dans le [GitHub Repository](https://github.com/artemis-fowl-fowl/haos-link-mqtt/issues)

@@ -2,12 +2,12 @@
   "manifest_version": 1,
   "domain": "mqtt_entity_bridge",
   "name": "MQTT Entity Bridge",
-  "codeowners": ["@YOUR_GITHUB_USERNAME"],
+  "codeowners": ["@artemis-fowl-fowl"],
   "config_flow": true,
-  "documentation": "https://github.com/YOUR_GITHUB_USERNAME/mqtt_entity_bridge",
+  "documentation": "https://github.com/artemis-fowl-fowl/haos-link-mqtt",
   "requirements": ["paho-mqtt>=1.6.1"],
   "integration_type": "hub",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/YOUR_GITHUB_USERNAME/mqtt_entity_bridge/issues",
+  "issue_tracker": "https://github.com/artemis-fowl-fowl/haos-link-mqtt/issues",
   "homeassistant": "2023.1.0"
 }
