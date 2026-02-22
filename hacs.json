@@ -1,7 +1,11 @@
 {
   "name": "MQTT Entity Bridge",
   "content_in_root": false,
-  "render_readme": true,
+  "filename": "mqtt_entity_bridge",
   "homeassistant": "2023.1.0",
-  "github": "artemis-fowl-fowl/haos-link-mqtt"
+  "domains": ["light", "switch", "sensor", "climate", "lock"],
+  "render_readme": true,
+  "documentation": "https://github.com/artemis-fowl-fowl/haos-link-mqtt",
+  "issues": "https://github.com/artemis-fowl-fowl/haos-link-mqtt/issues",
+  "codeowners": ["@artemis-fowl-fowl"]
 }
