@@ -134,10 +134,10 @@ class MQTTEntityBridge:
         self.client = None
         self.config = entry.data
 
-        self.mqtt_host = self.config.get("mqtt_host")
-        self.mqtt_port = self.config.get("mqtt_port", 1883)
-        self.mqtt_user = self.config.get("mqtt_user")
-        self.mqtt_password = self.config.get("mqtt_password")
+        self.mqtt_host = self.config.get("host")
+        self.mqtt_port = self.config.get("port", 1883)
+        self.mqtt_user = self.config.get("username")
+        self.mqtt_password = self.config.get("password")
         self.topic_prefix = self.config.get("topic_prefix", "homeassistant")
 
     async def async_connect(self) -> None:
