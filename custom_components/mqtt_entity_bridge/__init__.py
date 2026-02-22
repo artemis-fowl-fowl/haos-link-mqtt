@@ -131,22 +131,36 @@ class MQTTEntityBridge:
         self.mqtt_password = self.config.get("password")
         self.topic_prefix = self.config.get("topic_prefix", "homeassistant")
         
-        _LOGGER.debug(f"MQTT Config: host={self.mqtt_host}, port={self.mqtt_port}, user={self.mqtt_user}")
+        _LOGGER.info(f"🔧 MQTT Config: host={self.mqtt_host}, port={self.mqtt_port}, user={self.mqtt_user}, prefix={self.topic_prefix}")
+        
+        # Vérifier qu'on a tous les params
+        if not self.mqtt_host:
+            _LOGGER.error(f"❌ MQTT host non configuré!")
+        if not self.mqtt_user:
+            _LOGGER.error(f"❌ MQTT user non configuré!")
 
     async def async_connect(self) -> None:
         """Connecter au serveur MQTT."""
         try:
-            _LOGGER.info(f"🔗 Connexion à {self.mqtt_host}:{self.mqtt_port}...")
+            _LOGGER.info(f"🔗 Connexion à {self.mqtt_host}:{self.mqtt_port} (user: {self.mqtt_user})...")
             self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
             self.client.on_connect = self._on_connect
             self.client.on_disconnect = self._on_disconnect
             self.client.on_publish = self._on_publish
             
-            self.client.username_pw_set(self.mqtt_user, self.mqtt_password)
-            self.client.connect(self.mqtt_host, self.mqtt_port, keepalive=60)
-            self.client.loop_start()
+            if not self.mqtt_user:
+                _LOGGER.warning(f"⚠️ User MQTT vide, connexion anonyme")
             
-            _LOGGER.info(f"✅ Client MQTT initialisé")
+            self.client.username_pw_set(self.mqtt_user, self.mqtt_password)
+            _LOGGER.debug(f"📝 Credentials configurées")
+            
+            self.client.connect(self.mqtt_host, self.mqtt_port, keepalive=60)
+            _LOGGER.debug(f"📝 Connect() appelé")
+            
+            self.client.loop_start()
+            _LOGGER.debug(f"📝 Loop démarré")
+            
+            _LOGGER.info(f"✅ Client MQTT initialisé et le loop lancé")
         except Exception as err:
             _LOGGER.error(f"❌ Erreur connexion MQTT: {err}", exc_info=True)
 
@@ -160,9 +174,19 @@ class MQTTEntityBridge:
     def _on_connect(self, client, userdata, flags, rc):
         """Callback de connexion MQTT."""
         if rc == 0:
-            _LOGGER.info("✅ Connecté au broker MQTT!")
+            _LOGGER.info(f"🎉 CONNECTÉ au broker MQTT! (code=0)")
         else:
             _LOGGER.error(f"❌ Erreur connexion MQTT: code {rc}")
+            if rc == 1:
+                _LOGGER.error("   → Erreur de protocole")
+            elif rc == 2:
+                _LOGGER.error("   → Client ID invalide")
+            elif rc == 3:
+                _LOGGER.error("   → Serveur indisponible")
+            elif rc == 4:
+                _LOGGER.error("   → Credentials invalides (user/password)")
+            elif rc == 5:
+                _LOGGER.error("   → Non autorisé")
 
     def _on_disconnect(self, client, userdata, rc):
         """Callback de déconnexion MQTT."""
@@ -176,14 +200,18 @@ class MQTTEntityBridge:
     async def async_publish_entity(self, hass: HomeAssistant, entity_id: str) -> None:
         """Publier l'état d'une entité."""
         try:
+            _LOGGER.info(f"📤 Tentative publication: {entity_id}")
+            
             if not self.client:
-                _LOGGER.warning(f"❌ Client MQTT non connecté pour {entity_id}")
+                _LOGGER.error(f"   ❌ Client MQTT non connecté!")
                 return
 
             state = hass.states.get(entity_id)
             if not state:
-                _LOGGER.warning(f"❌ Entité non trouvée: {entity_id}")
+                _LOGGER.error(f"   ❌ Entité non trouvée dans HA: {entity_id}")
                 return
+
+            _LOGGER.info(f"   ✓ État trouvé: {state.state}")
 
             domain, obj_id = entity_id.split(".", 1)
 
@@ -203,10 +231,10 @@ class MQTTEntityBridge:
             discovery_config = {k: v for k, v in discovery_config.items() if v not in (None, "")}
             
             try:
-                self.client.publish(config_topic, json.dumps(discovery_config), qos=1, retain=True)
-                _LOGGER.debug(f"📋 Discovery publié: {config_topic}")
+                result = self.client.publish(config_topic, json.dumps(discovery_config), qos=1, retain=True)
+                _LOGGER.debug(f"   📋 Discovery: topic={config_topic}, result.mid={result.mid}")
             except Exception as err:
-                _LOGGER.error(f"❌ Erreur discovery: {err}")
+                _LOGGER.error(f"   ❌ Erreur discovery: {err}", exc_info=True)
 
             # 2. Publier l'état actuel
             payload = {
@@ -217,11 +245,11 @@ class MQTTEntityBridge:
 
             topic = f"{self.topic_prefix}/{domain}/{obj_id}/state"
             
-            _LOGGER.info(f"📤 Publication: {topic}")
-            _LOGGER.debug(f"   Payload: {payload}")
+            _LOGGER.debug(f"   📋 Topic: {topic}")
+            _LOGGER.debug(f"   📋 Payload: {json.dumps(payload)}")
             
-            self.client.publish(topic, json.dumps(payload), qos=1, retain=True)
-            _LOGGER.info(f"✅ Publié: {entity_id}")
+            result = self.client.publish(topic, json.dumps(payload), qos=1, retain=True)
+            _LOGGER.info(f"✅ Publié: {entity_id} (mid={result.mid})")
             
         except Exception as err:
             _LOGGER.error(f"❌ Erreur publication {entity_id}: {err}", exc_info=True)

@@ -98,15 +98,22 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 def test_mqtt_connection(host: str, port: int, username: str, password: str) -> bool:
     """Tester la connexion MQTT."""
     import paho.mqtt.client as mqtt
+    import time
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
     client.username_pw_set(username, password)
 
     try:
+        _LOGGER.debug(f"🧪 Test MQTT: {host}:{port} avec user={username}")
         client.connect(host, port, keepalive=5)
+        client.loop_start()
+        time.sleep(2)  # Attendre la connexion
+        client.loop_stop()
         client.disconnect()
+        _LOGGER.debug(f"✅ Test MQTT réussi")
         return True
     except Exception as err:
+        _LOGGER.error(f"❌ Test MQTT échoué: {err}")
         raise ConnectionError(f"Impossible de se connecter: {err}")
 
 
