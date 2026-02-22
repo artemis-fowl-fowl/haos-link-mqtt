@@ -11,7 +11,6 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_registry import async_get as get_entity_registry
-from homeassistant.helpers.state import State
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +40,7 @@ SERVICE_UPDATE_PUBLISHED = "update_published_entities"
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Configuration YAML pour MQTT Entity Bridge."""
+    _LOGGER.debug(f"async_setup called with config: {DOMAIN in config}")
     if DOMAIN not in config:
         return True
 
@@ -50,95 +50,69 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Configuration du composant via UI."""
-    _LOGGER.debug(f"Setup entry: {entry.data}")
+    _LOGGER.info(f"🚀 Setup entry pour MQTT Entity Bridge: {entry.data}")
 
     # Initialiser les données
     hass.data.setdefault(DOMAIN, {})
+    
+    # Récupérer les entités sélectionnées
+    published_entities = entry.data.get("published_entities", [])
+    _LOGGER.info(f"📝 Entités sélectionnées: {published_entities}")
+    
+    hass.data[DOMAIN]["published_entities"] = published_entities
     hass.data[DOMAIN]["mqtt_client"] = None
-    hass.data[DOMAIN]["published_entities"] = entry.data.get("published_entities", [])
 
     # Créer le client MQTT
     mqtt_client = MQTTEntityBridge(hass, entry)
     hass.data[DOMAIN]["mqtt_client"] = mqtt_client
+    
+    _LOGGER.info(f"🔌 Tentative de connexion MQTT...")
+    await mqtt_client.async_connect()
+    
+    # Attendre un peu que la connexion soit établie
+    import asyncio
+    await asyncio.sleep(1)
+    
+    # Publier les entités après connexion
+    _LOGGER.info(f"📤 Publication des {len(published_entities)} entités...")
+    for entity_id in published_entities:
+        _LOGGER.info(f"   Publiant: {entity_id}")
+        await mqtt_client.async_publish_entity(hass, entity_id)
 
     # Enregistrer les services
+    async def handle_publish_service(call):
+        entity_id = call.data.get("entity_id")
+        _LOGGER.info(f"📤 Service: publication de {entity_id}")
+        await mqtt_client.async_publish_entity(hass, entity_id)
+
+    async def handle_publish_all_service(call):
+        _LOGGER.info(f"📤 Service: publication de toutes les entités")
+        for eid in published_entities:
+            await mqtt_client.async_publish_entity(hass, eid)
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_PUBLISH_ENTITY,
-        handle_publish_entity,
-        schema=vol.Schema({
-            vol.Required("entity_id"): cv.entity_id,
-        }),
+        handle_publish_service,
     )
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_PUBLISH_SELECTED,
-        handle_publish_selected,
-        schema=vol.Schema({}),
+        handle_publish_all_service,
     )
 
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_UPDATE_PUBLISHED,
-        handle_update_published,
-        schema=vol.Schema({
-            vol.Required("entity_ids"): cv.ensure_list,
-        }),
-    )
-
-    # Connecter MQTT
-    await mqtt_client.async_connect()
-    
-    # Publier les entités au démarrage
-    await mqtt_client.async_publish_all_entities(hass)
-    
-    # Listener pour republier quand l'état change
-    async def on_state_changed(event):
-        """Republier quand l'état change."""
-        if not hass.data[DOMAIN].get("published_entities"):
-            return
-        
-        entity_id = event.data.get("entity_id")
-        if entity_id in hass.data[DOMAIN].get("published_entities", []):
-            await mqtt_client.async_publish_entity(hass, entity_id)
-    
-    hass.bus.async_listen("state_changed", on_state_changed)
-    
-    _LOGGER.info(f"MQTT Entity Bridge configuré avec {len(hass.data[DOMAIN]['published_entities'])} entités")
-
+    _LOGGER.info(f"✅ MQTT Entity Bridge initialisé avec succès!")
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Arrêter le composant."""
+    _LOGGER.info("🛑 Déchargement de MQTT Entity Bridge")
     if DOMAIN in hass.data and hass.data[DOMAIN].get("mqtt_client"):
         client = hass.data[DOMAIN]["mqtt_client"]
         await client.async_disconnect()
-
     return True
-
-
-async def handle_publish_entity(hass: HomeAssistant, call: Any) -> None:
-    """Publier une entité spécifique."""
-    entity_id = call.data.get("entity_id")
-    client = hass.data[DOMAIN]["mqtt_client"]
-    await client.async_publish_entity(hass, entity_id)
-
-
-async def handle_publish_selected(hass: HomeAssistant, call: Any) -> None:
-    """Publier les entités sélectionnées."""
-    client = hass.data[DOMAIN]["mqtt_client"]
-    entity_ids = hass.data[DOMAIN].get("published_entities", [])
-    for entity_id in entity_ids:
-        await client.async_publish_entity(hass, entity_id)
-
-
-async def handle_update_published(hass: HomeAssistant, call: Any) -> None:
-    """Mettre à jour la liste des entités publiées."""
-    entity_ids = call.data.get("entity_ids", [])
-    hass.data[DOMAIN]["published_entities"] = entity_ids
-    _LOGGER.info(f"Entités publiées mises à jour: {entity_ids}")
 
 
 class MQTTEntityBridge:
@@ -156,212 +130,78 @@ class MQTTEntityBridge:
         self.mqtt_user = self.config.get("username")
         self.mqtt_password = self.config.get("password")
         self.topic_prefix = self.config.get("topic_prefix", "homeassistant")
+        
+        _LOGGER.debug(f"MQTT Config: host={self.mqtt_host}, port={self.mqtt_port}, user={self.mqtt_user}")
 
     async def async_connect(self) -> None:
         """Connecter au serveur MQTT."""
         try:
+            _LOGGER.info(f"🔗 Connexion à {self.mqtt_host}:{self.mqtt_port}...")
             self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
             self.client.on_connect = self._on_connect
-            self.client.on_message = self._on_message
             self.client.on_disconnect = self._on_disconnect
-
+            self.client.on_publish = self._on_publish
+            
             self.client.username_pw_set(self.mqtt_user, self.mqtt_password)
-
             self.client.connect(self.mqtt_host, self.mqtt_port, keepalive=60)
             self.client.loop_start()
-
-            _LOGGER.info(
-                f"Connexion MQTT établie: {self.mqtt_host}:{self.mqtt_port}"
-            )
+            
+            _LOGGER.info(f"✅ Client MQTT initialisé")
         except Exception as err:
-            _LOGGER.error(f"Erreur de connexion MQTT: {err}")
+            _LOGGER.error(f"❌ Erreur connexion MQTT: {err}", exc_info=True)
 
     async def async_disconnect(self) -> None:
         """Déconnecter de MQTT."""
         if self.client:
             self.client.loop_stop()
             self.client.disconnect()
-            _LOGGER.info("Déconnecté de MQTT")
+            _LOGGER.info("🛑 Déconnecté de MQTT")
 
     def _on_connect(self, client, userdata, flags, rc):
         """Callback de connexion MQTT."""
         if rc == 0:
-            _LOGGER.info("Connecté au broker MQTT")
-            # S'abonner aux topics de contrôle
-            client.subscribe(f"{self.topic_prefix}/control/#")
-            client.subscribe(f"{self.topic_prefix}/request/#")
+            _LOGGER.info("✅ Connecté au broker MQTT!")
         else:
-            _LOGGER.error(f"Erreur de connexion MQTT: code {rc}")
+            _LOGGER.error(f"❌ Erreur connexion MQTT: code {rc}")
 
     def _on_disconnect(self, client, userdata, rc):
         """Callback de déconnexion MQTT."""
         if rc != 0:
-            _LOGGER.warning(f"Déconnexion inattendue: code {rc}")
+            _LOGGER.warning(f"⚠️ Déconnexion inattendue: code {rc}")
 
-    def _on_message(self, client, userdata, msg):
-        """Traiter les messages MQTT entrants."""
-        _LOGGER.debug(f"Message reçu: {msg.topic} = {msg.payload.decode()}")
-
-        # Exemple: homeassistant/control/light.salon/set
-        parts = msg.topic.split("/")
-        if len(parts) >= 3 and parts[1] == "control":
-            # Extraire entity_id et le state/commande
-            entity_domain_id = "/".join(parts[2:-1])  # light.salon
-            command = parts[-1]  # set ou toggle
-
-            payload = msg.payload.decode()
-            self.hass.create_task(
-                self._handle_control_message(entity_domain_id, command, payload)
-            )
-
-    async def _handle_control_message(self, entity_id: str, command: str, payload: str) -> None:
-        """Gérer les messages de contrôle entrants."""
-        domain = entity_id.split(".")[0]
-
-        if domain == "light":
-            if command == "set":
-                payload_dict = json.loads(payload) if payload.startswith("{") else {"state": payload}
-                if payload_dict.get("state") == "on":
-                    await self.hass.services.async_call(
-                        "light", "turn_on", {"entity_id": entity_id}
-                    )
-                else:
-                    await self.hass.services.async_call(
-                        "light", "turn_off", {"entity_id": entity_id}
-                    )
-
-        elif domain == "switch":
-            if payload == "on":
-                await self.hass.services.async_call(
-                    "switch", "turn_on", {"entity_id": entity_id}
-                )
-            else:
-                await self.hass.services.async_call(
-                    "switch", "turn_off", {"entity_id": entity_id}
-                )
-
-        _LOGGER.info(f"Commande appliquée: {entity_id} -> {payload}")
+    def _on_publish(self, client, userdata, mid):
+        """Callback publication."""
+        _LOGGER.debug(f"📤 Message publié: mid={mid}")
 
     async def async_publish_entity(self, hass: HomeAssistant, entity_id: str) -> None:
-        """Publier l'état d'une entité + configuration MQTT Discovery."""
-        if not self.client:
-            _LOGGER.warning("Client MQTT non connecté")
-            return
-
-        state = hass.states.get(entity_id)
-        if not state:
-            _LOGGER.warning(f"Entité non trouvée: {entity_id}")
-            return
-
-        domain, obj_id = entity_id.split(".", 1)
-
-        # 1️⃣ Publier la configuration MQTT Discovery
-        config_topic = f"{self.topic_prefix}/{domain}/{obj_id}/config"
-        discovery_config = self._get_discovery_config(domain, obj_id, entity_id, state)
-        
+        """Publier l'état d'une entité."""
         try:
-            self.client.publish(config_topic, json.dumps(discovery_config), qos=1, retain=True)
-            _LOGGER.debug(f"Config publiée: {config_topic}")
+            if not self.client:
+                _LOGGER.warning(f"❌ Client MQTT non connecté pour {entity_id}")
+                return
+
+            state = hass.states.get(entity_id)
+            if not state:
+                _LOGGER.warning(f"❌ Entité non trouvée: {entity_id}")
+                return
+
+            domain, obj_id = entity_id.split(".", 1)
+
+            # Payload simple avec l'état
+            payload = {
+                "entity_id": entity_id,
+                "state": state.state,
+                "attributes": state.attributes,
+            }
+
+            topic = f"{self.topic_prefix}/{domain}/{obj_id}/state"
+            
+            _LOGGER.info(f"📤 Publication: {topic}")
+            _LOGGER.debug(f"   Payload: {payload}")
+            
+            self.client.publish(topic, json.dumps(payload), qos=1, retain=True)
+            _LOGGER.info(f"✅ Publié: {entity_id}")
+            
         except Exception as err:
-            _LOGGER.error(f"Erreur config publication: {err}")
+            _LOGGER.error(f"❌ Erreur publication {entity_id}: {err}", exc_info=True)
 
-        # 2️⃣ Publier l'état actuel
-        state_payload = {
-            "entity_id": entity_id,
-            "state": state.state,
-            "attributes": state.attributes,
-            "last_changed": state.last_changed.isoformat() if state.last_changed else None,
-            "last_updated": state.last_updated.isoformat() if state.last_updated else None,
-        }
-
-        state_topic = f"{self.topic_prefix}/{domain}/{obj_id}/state"
-
-        try:
-            self.client.publish(state_topic, json.dumps(state_payload), qos=1, retain=True)
-            _LOGGER.debug(f"État publié: {state_topic}")
-        except Exception as err:
-            _LOGGER.error(f"Erreur publication état: {err}")
-
-    def _get_discovery_config(self, domain: str, obj_id: str, entity_id: str, state: State) -> dict:
-        """Générer la configuration MQTT Discovery pour une entité."""
-        friendly_name = state.attributes.get("friendly_name", obj_id.replace("_", " ").title())
-        icon = state.attributes.get("icon", "")
-        
-        state_topic = f"{self.topic_prefix}/{domain}/{obj_id}/state"
-        command_topic = f"{self.topic_prefix}/control/{domain}/{obj_id}/set"
-        
-        # Configuration de base commune
-        config = {
-            "name": friendly_name,
-            "unique_id": entity_id,
-            "obj_id": obj_id,
-            "state_topic": state_topic,
-            "state_value_template": "{{ value_json.state }}",
-            "json_attributes_topic": state_topic,
-            "json_attributes_template": "{{ value_json.attributes | tojson }}",
-            "icon": icon,
-            "device_class": state.attributes.get("device_class", None),
-        }
-
-        # Configuration spécifique par domaine
-        if domain == "light":
-            config.update({
-                "command_topic": command_topic,
-                "payload_on": '{"state":"on"}',
-                "payload_off": '{"state":"off"}',
-                "brightness": state.attributes.get("brightness") is not None,
-                "color_temp": state.attributes.get("color_temp") is not None,
-                "color_mode": state.attributes.get("color_mode") is not None,
-            })
-        
-        elif domain == "switch":
-            config.update({
-                "command_topic": command_topic,
-                "payload_on": '{"state":"on"}',
-                "payload_off": '{"state":"off"}',
-            })
-        
-        elif domain == "climate":
-            config.update({
-                "command_topic": command_topic,
-                "current_temperature_topic": state_topic,
-                "current_temperature_template": "{{ value_json.attributes.current_temperature }}",
-                "temperature_state_topic": state_topic,
-                "temperature_state_template": "{{ value_json.attributes.target_temperature }}",
-                "modes": state.attributes.get("hvac_modes", ["heat", "cool", "off"]),
-                "action_topic": state_topic,
-                "action_template": "{{ value_json.attributes.hvac_action }}",
-            })
-        
-        elif domain == "lock":
-            config.update({
-                "command_topic": command_topic,
-                "payload_lock": '{"action":"lock"}',
-                "payload_unlock": '{"action":"unlock"}',
-                "value_template": "{{ 'locked' if value_json.state == 'locked' else 'unlocked' }}",
-            })
-        
-        elif domain == "sensor":
-            config.update({
-                "unit_of_measurement": state.attributes.get("unit_of_measurement", ""),
-                "value_template": "{{ value_json.state }}",
-            })
-        
-        elif domain == "cover":
-            config.update({
-                "command_topic": command_topic,
-                "payload_open": '{"action":"open"}',
-                "payload_close": '{"action":"close"}',
-                "payload_stop": '{"action":"stop"}',
-            })
-
-        # Nettoyer les valeurs None
-        config = {k: v for k, v in config.items() if v is not None}
-        
-        return config
-
-    async def async_publish_all_entities(self, hass: HomeAssistant) -> None:
-        """Publier toutes les entités sélectionnées."""
-        entity_ids = self.hass.data[DOMAIN].get("published_entities", [])
-        for entity_id in entity_ids:
-            await self.async_publish_entity(hass, entity_id)
