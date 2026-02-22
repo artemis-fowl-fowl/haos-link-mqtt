@@ -90,6 +90,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Connecter MQTT
     await mqtt_client.async_connect()
     
+    # Publier les entités au démarrage
+    await mqtt_client.async_publish_all_entities(hass)
+    
+    # Listener pour republier quand l'état change
+    async def on_state_changed(event):
+        """Republier quand l'état change."""
+        if not hass.data[DOMAIN].get("published_entities"):
+            return
+        
+        entity_id = event.data.get("entity_id")
+        if entity_id in hass.data[DOMAIN].get("published_entities", []):
+            await mqtt_client.async_publish_entity(hass, entity_id)
+    
+    hass.bus.async_listen("state_changed", on_state_changed)
+    
     _LOGGER.info(f"MQTT Entity Bridge configuré avec {len(hass.data[DOMAIN]['published_entities'])} entités")
 
     return True
