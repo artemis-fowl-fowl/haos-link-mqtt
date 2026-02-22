@@ -228,7 +228,7 @@ class MQTTEntityBridge:
         _LOGGER.info(f"Commande appliquée: {entity_id} -> {payload}")
 
     async def async_publish_entity(self, hass: HomeAssistant, entity_id: str) -> None:
-        """Publier l'état d'une entité."""
+        """Publier l'état d'une entité + configuration MQTT Discovery."""
         if not self.client:
             _LOGGER.warning("Client MQTT non connecté")
             return
@@ -240,8 +240,18 @@ class MQTTEntityBridge:
 
         domain, obj_id = entity_id.split(".", 1)
 
-        # Créer le payload avec les infos
-        payload = {
+        # 1️⃣ Publier la configuration MQTT Discovery
+        config_topic = f"{self.topic_prefix}/{domain}/{obj_id}/config"
+        discovery_config = self._get_discovery_config(domain, obj_id, entity_id, state)
+        
+        try:
+            self.client.publish(config_topic, json.dumps(discovery_config), qos=1, retain=True)
+            _LOGGER.debug(f"Config publiée: {config_topic}")
+        except Exception as err:
+            _LOGGER.error(f"Erreur config publication: {err}")
+
+        # 2️⃣ Publier l'état actuel
+        state_payload = {
             "entity_id": entity_id,
             "state": state.state,
             "attributes": state.attributes,
@@ -249,14 +259,91 @@ class MQTTEntityBridge:
             "last_updated": state.last_updated.isoformat() if state.last_updated else None,
         }
 
-        # Topic: homeassistant/light/salon/state
-        topic = f"{self.topic_prefix}/{domain}/{obj_id}/state"
+        state_topic = f"{self.topic_prefix}/{domain}/{obj_id}/state"
 
         try:
-            self.client.publish(topic, json.dumps(payload), qos=1, retain=True)
-            _LOGGER.debug(f"Publié: {topic} = {payload}")
+            self.client.publish(state_topic, json.dumps(state_payload), qos=1, retain=True)
+            _LOGGER.debug(f"État publié: {state_topic}")
         except Exception as err:
-            _LOGGER.error(f"Erreur publication: {err}")
+            _LOGGER.error(f"Erreur publication état: {err}")
+
+    def _get_discovery_config(self, domain: str, obj_id: str, entity_id: str, state: State) -> dict:
+        """Générer la configuration MQTT Discovery pour une entité."""
+        friendly_name = state.attributes.get("friendly_name", obj_id.replace("_", " ").title())
+        icon = state.attributes.get("icon", "")
+        
+        state_topic = f"{self.topic_prefix}/{domain}/{obj_id}/state"
+        command_topic = f"{self.topic_prefix}/control/{domain}/{obj_id}/set"
+        
+        # Configuration de base commune
+        config = {
+            "name": friendly_name,
+            "unique_id": entity_id,
+            "obj_id": obj_id,
+            "state_topic": state_topic,
+            "state_value_template": "{{ value_json.state }}",
+            "json_attributes_topic": state_topic,
+            "json_attributes_template": "{{ value_json.attributes | tojson }}",
+            "icon": icon,
+            "device_class": state.attributes.get("device_class", None),
+        }
+
+        # Configuration spécifique par domaine
+        if domain == "light":
+            config.update({
+                "command_topic": command_topic,
+                "payload_on": '{"state":"on"}',
+                "payload_off": '{"state":"off"}',
+                "brightness": state.attributes.get("brightness") is not None,
+                "color_temp": state.attributes.get("color_temp") is not None,
+                "color_mode": state.attributes.get("color_mode") is not None,
+            })
+        
+        elif domain == "switch":
+            config.update({
+                "command_topic": command_topic,
+                "payload_on": '{"state":"on"}',
+                "payload_off": '{"state":"off"}',
+            })
+        
+        elif domain == "climate":
+            config.update({
+                "command_topic": command_topic,
+                "current_temperature_topic": state_topic,
+                "current_temperature_template": "{{ value_json.attributes.current_temperature }}",
+                "temperature_state_topic": state_topic,
+                "temperature_state_template": "{{ value_json.attributes.target_temperature }}",
+                "modes": state.attributes.get("hvac_modes", ["heat", "cool", "off"]),
+                "action_topic": state_topic,
+                "action_template": "{{ value_json.attributes.hvac_action }}",
+            })
+        
+        elif domain == "lock":
+            config.update({
+                "command_topic": command_topic,
+                "payload_lock": '{"action":"lock"}',
+                "payload_unlock": '{"action":"unlock"}',
+                "value_template": "{{ 'locked' if value_json.state == 'locked' else 'unlocked' }}",
+            })
+        
+        elif domain == "sensor":
+            config.update({
+                "unit_of_measurement": state.attributes.get("unit_of_measurement", ""),
+                "value_template": "{{ value_json.state }}",
+            })
+        
+        elif domain == "cover":
+            config.update({
+                "command_topic": command_topic,
+                "payload_open": '{"action":"open"}',
+                "payload_close": '{"action":"close"}',
+                "payload_stop": '{"action":"stop"}',
+            })
+
+        # Nettoyer les valeurs None
+        config = {k: v for k, v in config.items() if v is not None}
+        
+        return config
 
     async def async_publish_all_entities(self, hass: HomeAssistant) -> None:
         """Publier toutes les entités sélectionnées."""
