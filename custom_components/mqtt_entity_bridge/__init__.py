@@ -227,6 +227,13 @@ class MQTTEntityBridge:
                 "device_class": state.attributes.get("device_class"),
             }
             
+            # Ajouter command_topic pour les lights et switches (read-only bridge)
+            if domain in ["light", "switch", "cover"]:
+                discovery_config["command_topic"] = f"{self.topic_prefix}/{domain}/{obj_id}/command"
+                if domain == "light":
+                    discovery_config["brightness_state_topic"] = f"{self.topic_prefix}/{domain}/{obj_id}/brightness"
+                    discovery_config["brightness_command_topic"] = f"{self.topic_prefix}/{domain}/{obj_id}/brightness_command"
+            
             # Enlever les values None et vides
             discovery_config = {k: v for k, v in discovery_config.items() if v not in (None, "")}
             
