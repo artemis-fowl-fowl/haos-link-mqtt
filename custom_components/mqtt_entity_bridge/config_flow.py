@@ -18,11 +18,10 @@ CONF_TOPIC_PREFIX = "topic_prefix"
 CONF_PUBLISHED_ENTITIES = "published_entities"
 
 
-class MQTTEntityBridgeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow pour MQTT Entity Bridge."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -63,35 +62,6 @@ class MQTTEntityBridgeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
-            description_placeholders={
-                "example_host": "192.168.1.100 (adresse IP du broker MQTT)",
-                "example_port": "1883 (port MQTT standard)",
-            },
-        )
-
-    async def async_step_select_entities(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
-        """Deuxième étape: sélectionner les entités à publier."""
-        if user_input is not None:
-            user_data = self.hass.data.get("mqtt_bridge_setup", {})
-            user_data.update(user_input)
-            return self.async_create_entry(
-                title="MQTT Entity Bridge",
-                data=user_data,
-            )
-
-        # Récupérer les entités disponibles
-        states = self.hass.states.async_all()
-        entities = {s.entity_id: s.entity_id for s in states}
-
-        return self.async_show_form(
-            step_id="select_entities",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(CONF_PUBLISHED_ENTITIES, default=[]): vol.In(entities),
-                }
-            ),
         )
 
 
